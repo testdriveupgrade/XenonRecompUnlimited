@@ -241,19 +241,17 @@ typedef struct _XOVERLAPPED {
 
 // this name is so dumb
 typedef struct _XXOVERLAPPED {
-    union
-    {
-        struct
-        {
-            be<uint32_t> Error;
-            be<uint32_t> Length;
-        };
-
-        struct
-        {
-            uint32_t InternalLow;
-            uint32_t InternalHigh;
-        };
+    struct ErrorLength {
+        be<uint32_t> Error;
+        be<uint32_t> Length;
+    };
+    struct Internal {
+        uint32_t InternalLow;
+        uint32_t InternalHigh;
+    };
+    union {
+        ErrorLength errorLength;
+        Internal internal;
     };
     uint32_t InternalContext;
     be<uint32_t> hEvent;
