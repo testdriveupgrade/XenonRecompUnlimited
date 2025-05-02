@@ -8,6 +8,10 @@ add_executable(XenonRecomp
     "test_recompiler.cpp" 
     "recompiler_config.cpp")
 
+target_include_directories(XenonRecomp PRIVATE
+    ${CMAKE_SOURCE_DIR}/thirdparty
+)
+
 target_precompile_headers(XenonRecomp PUBLIC "pch.h")
 
 target_link_libraries(XenonRecomp PRIVATE
@@ -27,3 +31,4 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif()
 
 target_compile_definitions(XenonRecomp PRIVATE _CRT_SECURE_NO_WARNINGS)
+
