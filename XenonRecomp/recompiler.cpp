@@ -756,7 +756,7 @@ case PPC_INST_BCTR:
         break;
 
     case PPC_INST_BLRL:
-        println("__builtin_debugtrap();");
+        println("__builtin_trap();");
         break;
 
     case PPC_INST_BLT:
@@ -1299,29 +1299,26 @@ case PPC_INST_BCTR:
         println("\t{}.s64 = {};", r(insn.operands[0]), int32_t(insn.operands[1] << 16));
         break;
 
-    case PPC_INST_LVEWX:
-    case PPC_INST_LVEWX128:
-    case PPC_INST_LVXL:
-    case PPC_INST_LVX:
-    case PPC_INST_LVX128:
-    case PPC_INST_LVXL128:
-    case PPC_INST_LVEHX: {
-        print("\t{} = simd::load_and_shuffle(", v(insn.operands[0]));
-        print("base + ((");
-        if (insn.operands[1] != 0)
-            print("{}.u32 + ", r(insn.operands[1]));
-        print("{}.u32) & ~0xF), VectorMaskL);\n", r(insn.operands[2]));
-        break;
-    }
+case PPC_INST_LVEWX:
+case PPC_INST_LVEWX128:
+case PPC_INST_LVXL:
+case PPC_INST_LVX:
+case PPC_INST_LVX128:
+case PPC_INST_LVXL128:
+case PPC_INST_LVEHX: {
+    print("\tsimd::store_shuffled({}, simd::load_and_shuffle(base + ((", v(insn.operands[0]));
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    print("{}.u32) & ~0xF), VectorMaskL));\n", r(insn.operands[2]));
+    break;
+}
 
-    case PPC_INST_LVLX:
-    case PPC_INST_LVLX128: {
-        println("\t{}.u32 = {}.u32 + {}.u32;", temp(), r(insn.operands[1]), r(insn.operands[2]));
-        println("\tsimd::store_shuffled({}.u8, base + ({}.u32 & ~0xF), &VectorMaskL[({}.u32 & 0xF) * 16]);",
-            v(insn.operands[0]), temp(), temp());
-        break;
-    }
-
+case PPC_INST_LVLX:
+case PPC_INST_LVLX128: {
+    println("\t{}.u32 = {}.u32 + {}.u32;", temp(), r(insn.operands[1]), r(insn.operands[2]));
+    EmitLoadShuffled(v(insn.operands[0]), temp());
+    break;
+}
     case PPC_INST_LVRX:
     case PPC_INST_LVRX128:
     {
@@ -1440,9 +1437,9 @@ case PPC_INST_BCTR:
         println("\t{}.u64 = ({}.lt << 7) | ({}.gt << 6) | ({}.eq << 5) | ({}.so << 4);", r(insn.operands[0]), cr(6), cr(6), cr(6), cr(6));
         break;
 
-    case PPC_INST_MFTB:
-        println("\t{}.u64 = __rdtsc();", r(insn.operands[0]));
-        break;
+case PPC_INST_MFTB:
+    println("\t{}.u64 = read_timestamp_counter();", r(insn.operands[0]));
+    break;
 
     case PPC_INST_MR:
         println("\t{}.u64 = {}.u64;", r(insn.operands[0]), r(insn.operands[1]));
@@ -1563,43 +1560,47 @@ case PPC_INST_BCTR:
         break;
 
     case PPC_INST_RLDICL:
-        println("\t{}.u64 = __builtin_rotateleft64({}.u64, {}) & 0x{:X};", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], ComputeMask(insn.operands[3], 63));
+        println("\t{}.u64 = rotl64({}.u64, {}) & 0x{:X};", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], ComputeMask(insn.operands[3], 63));
         break;
 
     case PPC_INST_RLDICR:
-        println("\t{}.u64 = __builtin_rotateleft64({}.u64, {}) & 0x{:X};", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], ComputeMask(0, insn.operands[3]));
+        println("\t{}.u64 = rotl64({}.u64, {}) & 0x{:X};", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], ComputeMask(0, insn.operands[3]));
         break;
 
     case PPC_INST_RLDIMI:
     {
         const uint64_t mask = ComputeMask(insn.operands[3], ~insn.operands[2]);
-        println("\t{}.u64 = (__builtin_rotateleft64({}.u64, {}) & 0x{:X}) | ({}.u64 & 0x{:X});", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], mask, r(insn.operands[0]), ~mask);
+        println("\t{}.u64 = (rotl64({}.u64, {}) & 0x{:X}) | ({}.u64 & 0x{:X});",
+            r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], mask, r(insn.operands[0]), ~mask);
         break;
     }
 
     case PPC_INST_RLWIMI:
     {
         const uint64_t mask = ComputeMask(insn.operands[3] + 32, insn.operands[4] + 32);
-        println("\t{}.u64 = (__builtin_rotateleft32({}.u32, {}) & 0x{:X}) | ({}.u64 & 0x{:X});", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], mask, r(insn.operands[0]), ~mask);
+        println("\t{}.u64 = (rotl32({}.u32, {}) & 0x{:X}) | ({}.u64 & 0x{:X});",
+            r(insn.operands[0]), r(insn.operands[1]), insn.operands[2], mask, r(insn.operands[0]), ~mask);
         break;
     }
 
     case PPC_INST_RLWINM:
-        println("\t{}.u64 = __builtin_rotateleft64({}.u32 | ({}.u64 << 32), {}) & 0x{:X};", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[1]), insn.operands[2], ComputeMask(insn.operands[3] + 32, insn.operands[4] + 32));
-        if (strchr(insn.opcode->name, '.'))
+        println("\t{}.u64 = rotl64({}.u32 | ({}.u64 << 32), {}) & 0x{:X};",
+            r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[1]), insn.operands[2],
+            ComputeMask(insn.operands[3] + 32, insn.operands[4] + 32));
+        if  (strchr(insn.opcode->name, '.'))
             println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
         break;
 
     case PPC_INST_ROTLDI:
-        println("\t{}.u64 = __builtin_rotateleft64({}.u64, {});", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2]);
+        println("\t{}.u64 = rotl64({}.u64, {});", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2]);
         break;
 
     case PPC_INST_ROTLW:
-        println("\t{}.u64 = __builtin_rotateleft32({}.u32, {}.u8 & 0x1F);", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
+        println("\t{}.u64 = rotl32({}.u32, {}.u8 & 0x1F);", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
         break;
 
     case PPC_INST_ROTLWI:
-        println("\t{}.u64 = __builtin_rotateleft32({}.u32, {});", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2]);
+        println("\t{}.u64 = rotl32({}.u32, {});", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2]);
         if (strchr(insn.opcode->name, '.'))
             println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
         break;
@@ -1836,86 +1837,92 @@ case PPC_INST_BCTR:
         println("{}.u32, {}.u16);", r(insn.operands[2]), r(insn.operands[0]));
         break;
 
-    case PPC_INST_STVEHX: {
-        println("\t{} = (", ea());
-        if (insn.operands[1] != 0)
-            print("{}.u32 + ", r(insn.operands[1]));
-        println("{}.u32) & ~0x1;", r(insn.operands[2]));
+case PPC_INST_STVEHX: {
+    // Begin PPC_STORE_U16 call
+    print("\tPPC_STORE_U16((");
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    print("{}.u32) & ~0x1, ", r(insn.operands[2]));
 
-        println("\tuint32_t tmp_off = {} & 0xF;", ea());
-        println("\tuint16_t tmp_val = simd::extract_u16({}, 7 - (tmp_off >> 1));", v(insn.operands[0]));
-        println("\tPPC_STORE_U16({}, tmp_val);", ea());
-        break;
-    }
+    // Correct parenthesis balancing here
+    print("simd::extract_u16(simd::to_vec128i({}), 7 - (((", v(insn.operands[0]));
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    println("{}.u32) & 0xF) >> 1)));", r(insn.operands[2]));  // ← One extra closing paren added
+    break;
+}
 
-    case PPC_INST_STVEWX:
-    case PPC_INST_STVEWX128: {
-        println("\t{} = (", ea());
-        if (insn.operands[1] != 0)
-            print("{}.u32 + ", r(insn.operands[1]));
-        println("{}.u32) & ~0x3;", r(insn.operands[2]));
+case PPC_INST_STVEWX:
+case PPC_INST_STVEWX128: {
+    // Begin PPC_STORE_U32 call
+    print("\tPPC_STORE_U32((");
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    print("{}.u32) & ~0x3, ", r(insn.operands[2]));
 
-        println("\tuint32_t tmp_off = {} & 0xF;", ea());
-        println("\tuint32_t tmp_val = simd::extract_u32({}, 3 - (tmp_off >> 2));", v(insn.operands[0]));
-        println("\tPPC_STORE_U32({}, tmp_val);", ea());
-        break;
-    }
+    // Complete simd::extract_u32 call
+    print("simd::extract_u32(*reinterpret_cast<const simd::vec128i*>(&{}.u32), 3 - ((", v(insn.operands[0]));
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    println("{}.u32) & 0xF) >> 2));", r(insn.operands[2]));
+    break;
+}
 
-    case PPC_INST_STVLX:
-    case PPC_INST_STVLXL:
-    case PPC_INST_STVLX128:
-    case PPC_INST_STVLXL128: {
-        println("\t{} = ", ea());
-        if (insn.operands[1] != 0)
-            print("{}.u32 + ", r(insn.operands[1]));
-        println("{}.u32;", r(insn.operands[2]));
+case PPC_INST_STVLX:
+case PPC_INST_STVLXL:
+case PPC_INST_STVLX128:
+case PPC_INST_STVLXL128: {
+    println("{{"); // ← Start a scoped block
+    println("\tuint32_t addr = ");
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    println("{}.u32;", r(insn.operands[2]));
 
-        println("\tuint8_t tmp_bytes[16];");
-        println("\tsimd::store_u8(tmp_bytes, {});", v(insn.operands[0]));
-        println("\tuint32_t tmp_off = {} & 0xF;", ea());
-        println("\tfor (size_t i = 0; i < (16 - tmp_off); i++)");
-        println("\t\tPPC_STORE_U8({} + i, tmp_bytes[15 - i]);", ea());
-        break;
-    }
+    println("\tuint32_t tmp_off = addr & 0xF;");
+    println("\tfor (size_t i = 0; i < (16 - tmp_off); i++)");
+    println("\t\tPPC_STORE_U8(addr + i, simd::extract_u8(simd::to_vec128i({}), 15 - i));", v(insn.operands[0]));
+    println("}}");
+    break;
+}
 
+case PPC_INST_STVRX:
+case PPC_INST_STVRXL:
+case PPC_INST_STVRX128:
+case PPC_INST_STVRXL128: {
+    println("{{");
+    println("\tuint32_t addr = ");
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    println("{}.u32;", r(insn.operands[2]));
 
-    case PPC_INST_STVRX:
-    case PPC_INST_STVRXL:
-    case PPC_INST_STVRX128:
-    case PPC_INST_STVRXL128: {
-        println("\t{} = ", ea());
-        if (insn.operands[1] != 0)
-            print("{}.u32 + ", r(insn.operands[1]));
-        println("{}.u32;", r(insn.operands[2]));
+    println("\tuint32_t tmp_off = addr & 0xF;");
+    println("\tfor (size_t i = 0; i < tmp_off; i++)");
+    println("\t\tPPC_STORE_U8(addr - i - 1, simd::extract_u8(simd::to_vec128i({}), i));", v(insn.operands[0]));
+    println("}}");
+    break;
+}
 
-        println("\tuint8_t tmp_bytes[16];");
-        println("\tsimd::store_u8(tmp_bytes, {});", v(insn.operands[0]));
-        println("\tuint32_t tmp_off = {} & 0xF;", ea());
-        println("\tfor (size_t i = 0; i < tmp_off; i++)");
-        println("\t\tPPC_STORE_U8({} - i - 1, tmp_bytes[i]);", ea());
-        break;
-    }
+case PPC_INST_STVX:
+    printSetFlushMode(true);
+    println("\tuint32_t addr{} = ({}.u32 + {}.u32) & ~0xF;", insn.operands[0], r(insn.operands[1] == 0 ? 0 : insn.operands[1]), r(insn.operands[2]));
+    println("\t*(volatile uint32_t*)addr{} = {}.u32[0];", insn.operands[0], v(insn.operands[0]));
+    println("\t*(volatile uint32_t*)(addr{} + 4) = {}.u32[1];", insn.operands[0], v(insn.operands[0]));
+    println("\t*(volatile uint32_t*)(addr{} + 8) = {}.u32[2];", insn.operands[0], v(insn.operands[0]));
+    println("\t*(volatile uint32_t*)(addr{} + 12) = {}.u32[3];", insn.operands[0], v(insn.operands[0]));
+    break;
 
-    case PPC_INST_STVX:
-        printSetFlushMode(true);
-        println("\tuint32_t addr{} = ({} + {}) & ~0xF;", insn.operands[0], r(insn.operands[1] == 0 ? 0 : insn.operands[1]), r(insn.operands[2]));
-        println("\tmem::storeVolatileU32({}.u32[0], addr{});", v(insn.operands[0]), insn.operands[0]);
-        println("\tmem::storeVolatileU32({}.u32[1], addr{} + 4);", v(insn.operands[0]), insn.operands[0]);
-        println("\tmem::storeVolatileU32({}.u32[2], addr{} + 8);", v(insn.operands[0]), insn.operands[0]);
-        println("\tmem::storeVolatileU32({}.u32[3], addr{} + 12);", v(insn.operands[0]), insn.operands[0]);
-        break;
+case PPC_INST_STVX128: {
+    const std::string addr = ea();
+    print("\t{} = (", addr);
+    if (insn.operands[1] != 0)
+        print("{}.u32 + ", r(insn.operands[1]));
+    println("{}.u32) & ~0xF;", r(insn.operands[2]));
 
-    case PPC_INST_STVX128: {
-        print("\t{} = (", ea());
-        if (insn.operands[1] != 0)
-            print("{}.u32 + ", r(insn.operands[1]));
-        println("{}.u32) & ~0xF;", r(insn.operands[2]));
-
-        println("\tsimd::store_shuffled_i8(base + {}, {}," , ea(), v(insn.operands[0]));
-        println("\t\tVectorMaskL);");
-        break;
-    }
-
+    // Convert PPCVRegister to vec128i, pass mask as const uint8_t*
+    println("\tsimd::store_shuffled(base + {}, simd::to_vec128i({}), &VectorMaskL[({} & 0xF) * 16]);",
+            addr, v(insn.operands[0]), addr);
+    break;
+}
 
     case PPC_INST_STW:
         print("{}", mmioStore() ? "\tPPC_MM_STORE_U32(" : "\tPPC_STORE_U32(");
@@ -2076,10 +2083,11 @@ case PPC_INST_BCTR:
         v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         break;
 
-    case PPC_INST_VADDSWS:
-        println("\t{}.v128 = simd::add_saturate_i32({}.v128, {}.v128);",
-        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
-        break;
+case PPC_INST_VADDSWS: {
+println("\tsimd::store_u32({}.u32, simd::add_saturate_i32(simd::to_vec128i({}), simd::to_vec128i({})));",
+    v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
+}
 
     case PPC_INST_VADDUBM:
         println("\tsimd::store_u8({}.u8, simd::add_u8(simd::load_u8({}.u8), simd::load_u8({}.u8)));",
@@ -2200,7 +2208,7 @@ case PPC_INST_BCTR:
 
     case PPC_INST_VCMPBFP:
     case PPC_INST_VCMPBFP128:
-        println("\t__builtin_debugtrap();");
+        println("\t__builtin_trap();");
         break;
 
     case PPC_INST_VCMPEQFP:
@@ -2283,14 +2291,15 @@ case PPC_INST_BCTR:
     case PPC_INST_VEXPTEFP:
     case PPC_INST_VEXPTEFP128:
         printSetFlushMode(true);
-        println("\t{}.v128 = simd::exp2_f32({}.v128);", v(insn.operands[0]), v(insn.operands[1]));
+        println("\tsimd::store_f32({}.f32, simd::log2_f32(simd::to_vec128f({})));", v(insn.operands[0]), v(insn.operands[1]));
         break;
 
-    case PPC_INST_VLOGEFP:
-    case PPC_INST_VLOGEFP128:
-        printSetFlushMode(true);
-        println("\t{}.v128 = simd::log2_f32({}.v128);", v(insn.operands[0]), v(insn.operands[1]));
-        break;
+case PPC_INST_VLOGEFP:
+case PPC_INST_VLOGEFP128:
+    printSetFlushMode(true);
+    println("\tsimd::store_f32({}.f32, simd::log2_f32(simd::to_vec128f({})));", 
+        v(insn.operands[0]), v(insn.operands[1]));
+    break;
 
     case PPC_INST_VMADDCFP128:
     case PPC_INST_VMADDFP:
@@ -2443,13 +2452,14 @@ case PPC_INST_BCTR:
         break;
 
     case PPC_INST_VPERMWI128: {
-        uint32_t x = 3 - (insn.operands[2] & 0x3);
-        uint32_t y = 3 - ((insn.operands[2] >> 2) & 0x3);
-        uint32_t z = 3 - ((insn.operands[2] >> 4) & 0x3);
-        uint32_t w = 3 - ((insn.operands[2] >> 6) & 0x3);
-        uint32_t perm = x | (y << 2) | (z << 4) | (w << 6);
-        println("\tsimd::store_i32({}.u32, simd::permute_i32(simd::load_i32({}.u32), 0x{:X}));",
-            v(insn.operands[0]), v(insn.operands[1]), perm);
+        uint8_t x = 3 - (insn.operands[2] & 0x3);
+        uint8_t y = 3 - ((insn.operands[2] >> 2) & 0x3);
+        uint8_t z = 3 - ((insn.operands[2] >> 4) & 0x3);
+        uint8_t w = 3 - ((insn.operands[2] >> 6) & 0x3);
+        uint32_t shuffle_mask = (w << 6) | (z << 4) | (y << 2) | x;
+
+        println("\tsimd::store_i32({}.u32, simd::permute_i32_dispatch(simd::load_i32({}.u32), 0x{:02X}));",
+            v(insn.operands[0]), v(insn.operands[1]), shuffle_mask);
         break;
     }
 
@@ -2496,7 +2506,7 @@ case PPC_INST_BCTR:
             break;
 
         default:
-            println("\t__builtin_debugtrap();");
+            println("\t__builtin_trap();");
             break;
         }
         break;
@@ -2563,18 +2573,35 @@ case PPC_INST_BCTR:
             v(insn.operands[0]), v(insn.operands[1]));
         break;
 
-    case PPC_INST_VRLIMI128:
-    {
-        constexpr size_t shuffles[] = {
-            simd::shuffle(3, 2, 1, 0),
-            simd::shuffle(2, 1, 0, 3),
-            simd::shuffle(1, 0, 3, 2),
-            simd::shuffle(0, 3, 2, 1)
-        };
-        println("\tsimd::store_f32({}.f32, simd::blend_f32(simd::load_f32({}.f32), simd::permute_f32(simd::load_f32({}.f32), {}), {}));",
-            v(insn.operands[0]), v(insn.operands[0]), v(insn.operands[1]), shuffles[insn.operands[3]], insn.operands[2]);
-        break;
+case PPC_INST_VRLIMI128:
+{
+    const int blend_mask = insn.operands[2];
+    const auto dest = v(insn.operands[0]);
+    const auto src  = v(insn.operands[1]);
+
+    switch (insn.operands[3]) {
+        case 0:
+            println("\tsimd::store_f32({0}.f32, simd::blend_f32<{3}>(simd::load_f32({0}.f32), simd::permute_f32<{1}>(simd::load_f32({2}.f32))));",
+                dest, simd::shuffle(3, 2, 1, 0), src, blend_mask);
+            break;
+        case 1:
+            println("\tsimd::store_f32({0}.f32, simd::blend_f32<{3}>(simd::load_f32({0}.f32), simd::permute_f32<{1}>(simd::load_f32({2}.f32))));",
+                dest, simd::shuffle(2, 1, 0, 3), src, blend_mask);
+            break;
+        case 2:
+            println("\tsimd::store_f32({0}.f32, simd::blend_f32<{3}>(simd::load_f32({0}.f32), simd::permute_f32<{1}>(simd::load_f32({2}.f32))));",
+                dest, simd::shuffle(1, 0, 3, 2), src, blend_mask);
+            break;
+        case 3:
+            println("\tsimd::store_f32({0}.f32, simd::blend_f32<{3}>(simd::load_f32({0}.f32), simd::permute_f32<{1}>(simd::load_f32({2}.f32))));",
+                dest, simd::shuffle(0, 3, 2, 1), src, blend_mask);
+            break;
+        default:
+            println("\t// Invalid shuffle selector: {}", insn.operands[3]);
+            break;
     }
+    break;
+}
 
     case PPC_INST_VRLH:
         for (size_t i = 0; i < 8; i++) {
@@ -2585,11 +2612,13 @@ case PPC_INST_BCTR:
         break;
 
 
-    case PPC_INST_VRSQRTEFP:
-    case PPC_INST_VRSQRTEFP128:
-        printSetFlushMode(true);
-        println("\t{}.v128 = simd::rsqrt_f32({}.v128);", v(insn.operands[0]), v(insn.operands[1]));
-        break;
+case PPC_INST_VRSQRTEFP:
+case PPC_INST_VRSQRTEFP128:
+    printSetFlushMode(true);
+    println("simd::store_shuffled({}, simd::rsqrt_f32(simd::to_vec128f({})));", 
+            v(insn.operands[0]), v(insn.operands[1]));
+    break;
+
 
     case PPC_INST_VSEL:
     case PPC_INST_VSEL128:
@@ -2597,10 +2626,10 @@ case PPC_INST_BCTR:
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[3]));
         break;
 
-    case PPC_INST_VSLB:
-        println("\tsimd::store_shifted_i8({}.v128, {}.v128, {}.v128);",
-            v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
-        break;
+case PPC_INST_VSLB:
+    println("\tsimd::store_shifted_i8({}, {}, {});",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
 
     case PPC_INST_VSLH:
         println("\tsimd::store_shifted_i16_by_u8low({}.v128, {}.v128, {}.v128);",
@@ -2613,12 +2642,12 @@ case PPC_INST_BCTR:
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]), 16 - insn.operands[3]);
         break;
 
-    case PPC_INST_VSLW:
-    case PPC_INST_VSLW128:
-        printSetFlushMode(true);
-        println("\t{}.v128 = simd::shift_left_variable_i32({}.v128, {}.v128);",
-            v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
-        break;
+case PPC_INST_VSLW:
+case PPC_INST_VSLW128:
+    printSetFlushMode(true);
+    println("\tsimd::to_vec128i({}) = simd::shift_left_variable_i32(simd::to_vec128i({}), simd::to_vec128i({}));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
 
     case PPC_INST_VSPLTB:
     {
@@ -2628,14 +2657,16 @@ case PPC_INST_BCTR:
         break;
     }
 
-    case PPC_INST_VSPLTH:
-    {
-        uint32_t perm = 7 - insn.operands[2];
-        uint16_t shuffle_mask = (perm * 2) | ((perm * 2 + 1) << 8);
-        println("\tsimd::store_i16({}.u16, simd::splat_halfword(simd::load_i16({}.u16), 0x{:X}));",
-            v(insn.operands[0]), v(insn.operands[1]), shuffle_mask);
-        break;
-    }
+case PPC_INST_VSPLTH:
+{
+    uint32_t elem_index = 7 - insn.operands[2];
+
+    println(
+        "\tsimd::store_i16(reinterpret_cast<uint16_t*>({}.u16), "
+        "simd::splat_halfword(*reinterpret_cast<const simd::vec128i*>({}.u16), {}));",
+        v(insn.operands[0]), v(insn.operands[1]), elem_index);
+    break;
+}
 
     case PPC_INST_VSPLTISB:
         println("\tsimd::store_i8({}.u8, simd::set1_i8(int8_t(0x{:X})));", v(insn.operands[0]), insn.operands[1]);
@@ -2651,12 +2682,10 @@ case PPC_INST_BCTR:
         break;
 
     case PPC_INST_VSPLTW:
-    case PPC_INST_VSPLTW128:
-    {
-        uint32_t perm = 3 - insn.operands[2];
-        perm |= (perm << 2) | (perm << 4) | (perm << 6);  // Replicate to all 4 lanes
-        println("\tsimd::store_i32({}.u32, simd::permute_i32(simd::load_i32({}.u32), 0x{:X}));",
-            v(insn.operands[0]), v(insn.operands[1]), perm);
+    case PPC_INST_VSPLTW128: {
+        uint32_t lane = 3 - (insn.operands[2] & 3); // PPC lane order is reversed
+        println("\tsimd::store_i32({}.u32, simd::broadcast_lane_i32(simd::load_i32({}.u32), {}));",
+            v(insn.operands[0]), v(insn.operands[1]), lane);
         break;
     }
 
@@ -2665,37 +2694,42 @@ case PPC_INST_BCTR:
             v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         break;
 
-    case PPC_INST_VSRAB:
-        printSetFlushMode(true);
-        println("simd::vec128i shift = simd::and_u8({}, simd::set1_i8(0x7));", v(insn.operands[2]));
-        println("\t{}.v128 = simd::shift_right_arithmetic_i8({}.v128, shift);", v(insn.operands[0]), v(insn.operands[1]));
-        break;
+case PPC_INST_VSRAB: {
+    printSetFlushMode(true);
+    println("simd::store_shuffled({}, simd::shift_right_arithmetic_i8(simd::to_vec128i({}), simd::and_u8(simd::to_vec128i({}), simd::set1_i8(0x7))));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
+}
 
-    case PPC_INST_VSRAH:
-        printSetFlushMode(true);
-        println("simd::vec128i shift = simd::and_u16({}, simd::set1_i16(0xF));", v(insn.operands[2]));
-        println("\t{}.v128 = simd::shift_right_arithmetic_i16({}.v128, shift);", v(insn.operands[0]), v(insn.operands[1]));
-        break;
+case PPC_INST_VSRAH: {
+    printSetFlushMode(true);
+    println("simd::store_shuffled({}, simd::shift_right_arithmetic_i16(simd::to_vec128i({}), simd::and_u16(simd::to_vec128i({}), simd::set1_i16(0xF))));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
+}
 
-    case PPC_INST_VSRAW:
-    case PPC_INST_VSRAW128:
-        printSetFlushMode(true);
-        println("simd::vec128i shift = simd::and_u32({}, simd::set1_i32(0x1F));", v(insn.operands[2]));
-        println("\t{}.v128 = simd::shift_right_arithmetic_i32({}.v128, shift);", v(insn.operands[0]), v(insn.operands[1]));
-        break;
+case PPC_INST_VSRAW:
+case PPC_INST_VSRAW128: {
+    printSetFlushMode(true);
+    println("simd::store_shuffled({}, simd::shift_right_arithmetic_i32(simd::to_vec128i({}), simd::and_u32(simd::to_vec128i({}), simd::set1_i32(0x1F))));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
+}
 
-    case PPC_INST_VSRH:
-        printSetFlushMode(true);
-        println("simd::vec128i shift = simd::and_u16({}, simd::set1_i16(0xF));", v(insn.operands[2]));
-        println("\t{}.v128 = simd::shift_right_logical_i16({}.v128, shift);", v(insn.operands[0]), v(insn.operands[1]));
-        break;
+case PPC_INST_VSRH: {
+    printSetFlushMode(true);
+    println("simd::store_shuffled({}, simd::shift_right_logical_i16(simd::to_vec128i({}), simd::and_u16(simd::to_vec128i({}), simd::set1_i16(0xF))));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
+}
 
-    case PPC_INST_VSRW:
-    case PPC_INST_VSRW128:
-        printSetFlushMode(true);
-        println("simd::vec128i shift = simd::and_u32({}, simd::set1_i32(0x1F));", v(insn.operands[2]));
-        println("\t{}.v128 = simd::shift_right_logical_i32({}.v128, shift);", v(insn.operands[0]), v(insn.operands[1]));
-        break;
+case PPC_INST_VSRW:
+case PPC_INST_VSRW128: {
+    printSetFlushMode(true);
+    println("simd::store_shuffled({}, simd::shift_right_logical_i32(simd::to_vec128i({}), simd::and_u32(simd::to_vec128i({}), simd::set1_i32(0x1F))));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
+}
 
     case PPC_INST_VSUBFP:
     case PPC_INST_VSUBFP128:
@@ -2709,25 +2743,27 @@ case PPC_INST_BCTR:
         println("\t{} = simd::sub_saturate_i16({}, {});", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
         break;
 
-    case PPC_INST_VSUBSWS:
-        printSetFlushMode(true);
-        println("\t{} = simd::sub_saturate_i32({}, {});", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
-        break;
+case PPC_INST_VSUBSWS:
+    printSetFlushMode(true);
+    println("\tsimd::store_i32({}.u32, simd::sub_saturate_i32(simd::to_vec128i({}), simd::to_vec128i({})));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
 
-    case PPC_INST_VSUBUBS:
-        println("\tsimd::store_u8({}.u8, simd::sub_saturate_u8(simd::load_u8({}.u8), simd::load_u8({}.u8)));",
-            v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
-        break;
+case PPC_INST_VSUBUBS:
+    println("\tsimd::store_u8({}.u8, simd::sub_saturate_u8(simd::load_u8({}.u8), simd::load_u8({}.u8)));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
 
-    case PPC_INST_VSUBUBM:
-        println("\tsimd::store_u8({}.u8, simd::sub_u8(simd::load_u8({}.u8), simd::load_u8({}.u8)));",
-            v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
-        break;
+case PPC_INST_VSUBUBM:
+    println("\tsimd::store_u8({}.u8, simd::sub_u8(simd::load_u8({}.u8), simd::load_u8({}.u8)));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
 
-    case PPC_INST_VSUBUHM:
-        println("\tsimd::store_u16({}.u16, simd::sub_u16(simd::load_u16({}.u16), simd::load_u16({}.u16)));",
-            v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
-        break;
+case PPC_INST_VSUBUHM:
+    println("\tsimd::store_u16({}.u16, simd::sub_u16(simd::load_u16({}.u16), simd::load_u16({}.u16)));",
+        v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+    break;
+
 
     case PPC_INST_VUPKD3D128:
         // TODO: vectorize somehow?
@@ -2756,7 +2792,7 @@ case PPC_INST_BCTR:
             break;
 
         default:
-            println("\t__builtin_debugtrap();");
+            println("\t__builtin_trap();");
             break;
         }
         break;
@@ -3175,7 +3211,8 @@ void Recompiler::SaveCurrentOutData(const std::string_view& name)
 
         if (name.empty())
         {
-            cppName = fmt::format("ppc_recomp.{}.cpp", cppFileIndex);
+            // Zero-pad cppFileIndex to width 4 (e.g. 000, 001, 002 ...)
+            cppName = fmt::format("ppc_recomp.{:03}.cpp", cppFileIndex);
             ++cppFileIndex;
         }
 
@@ -3214,4 +3251,26 @@ void Recompiler::SaveCurrentOutData(const std::string_view& name)
 
         out.clear();
     }
+}
+
+void Recompiler::EmitLoadShuffled(const std::string& dst, const std::string& offset) {
+    println("\tsimd::store_shuffled({},", dst);
+    println("\t\tsimde_mm_shuffle_epi8(");
+    println("\t\t\tsimde_mm_load_si128(reinterpret_cast<const simde__m128i*>(base + (({}).u32 & ~0xF))),", offset);
+    println("\t\t\tsimde_mm_load_si128(reinterpret_cast<const simde__m128i*>(&VectorMaskL[(({}).u32 & 0xF) * 16]))", offset);
+    println("\t\t));");
+}
+
+void Recompiler::EmitStoreShuffledU32(const std::string& addr, const std::string& vec) {
+    println("\tsimd::store_shuffled(base + {},", addr);
+    println("\t\t*reinterpret_cast<const simde__m128i*>(&{}.u8),", vec);
+    println("\t\tsimd::get_vector_mask_l({}));", addr);
+}
+
+void Recompiler::EmitLoadShuffledU32(const std::string& dst, const std::string& offset) {
+    println("\tsimd::store_shuffled({},", dst);
+    println("\t\tsimde_mm_shuffle_epi8(");
+    println("\t\t\tsimde_mm_load_si128(reinterpret_cast<const simde__m128i*>(base + ({} & ~0xF))),", offset);
+    println("\t\t\tsimde_mm_load_si128(reinterpret_cast<const simde__m128i*>(&VectorMaskL[({} & 0xF) * 16]))", offset);
+    println("\t\t));");
 }
