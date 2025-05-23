@@ -67,4 +67,8 @@ struct Recompiler
     void Recompile(const std::filesystem::path& headerFilePath);
 
     void SaveCurrentOutData(const std::string_view& name = std::string_view());
+
+void EmitLoadShuffled(const std::string& dst, const std::string& offset);
+void EmitLoadShuffledU32(const std::string& dst, const std::string& offset);
+void EmitStoreShuffledU32(const std::string& addr, const std::string& vec);
 };

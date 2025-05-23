@@ -12,7 +12,8 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "simd_wrapper.h"
+#include "simde_wrapper/simd_wrapper.h"
+#include "simde_wrapper/platform_timer.h"
 
 // SSE3 constants are missing from simde
 #ifndef _MM_DENORMALS_ZERO_MASK
@@ -27,7 +28,16 @@
 #define PPC_EXTERN_FUNC(x) extern PPC_FUNC(x)
 #define PPC_WEAK_FUNC(x) __attribute__((weak,noinline)) PPC_FUNC(x)
 
-#define PPC_FUNC_PROLOGUE() __builtin_assume(((size_t)base & 0x1F) == 0)
+#if defined(_MSC_VER)
+    #define PPC_FUNC_PROLOGUE() __assume(((size_t)base & 0x1F) == 0)
+#elif defined(__clang__)
+    #define PPC_FUNC_PROLOGUE() __builtin_assume(((size_t)base & 0x1F) == 0)
+#elif defined(__GNUC__)
+    // Use a conditional + __builtin_unreachable() to help GCC optimize
+    #define PPC_FUNC_PROLOGUE() do { if (!(((size_t)base & 0x1F) == 0)) __builtin_unreachable(); } while (0)
+#else
+    #define PPC_FUNC_PROLOGUE() ((void)0)
+#endif
 
 #ifndef PPC_LOAD_U8
 #define PPC_LOAD_U8(x) *(volatile uint8_t*)(base + (x))
@@ -104,6 +114,20 @@
 #endif
 
 #define PPC_MEMORY_SIZE 0x100000000ull
+
+#ifndef rotl32
+inline uint32_t rotl32(uint32_t x, uint32_t n) {
+    n &= 31;
+    return (n == 0) ? x : ((x << n) | (x >> (32 - n)));
+}
+#endif
+
+#ifndef rotl64
+inline uint64_t rotl64(uint64_t x, uint64_t n) {
+    n &= 63;
+    return (n == 0) ? x : ((x << n) | (x >> (64 - n)));
+}
+#endif
 
 #define PPC_LOOKUP_FUNC(x, y) *(PPCFunc**)(x + PPC_IMAGE_BASE + PPC_IMAGE_SIZE + (uint64_t(uint32_t(y) - PPC_CODE_BASE) * 2))
 
@@ -694,15 +718,25 @@ inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
 
 inline simde__m128i simde_mm_vctuxs(simde__m128 src1)
 {
-    simde__m128 xmm0 = simde_mm_max_ps(src1, simde_mm_set1_epi32(0));
-    simde__m128 xmm1 = simde_mm_cmpge_ps(xmm0, simde_mm_set1_ps((float)0x80000000));
-    simde__m128 xmm2 = simde_mm_sub_ps(xmm0, simde_mm_set1_ps((float)0x80000000));
+    // Clamp to 0.0f if negative
+    simde__m128 xmm0 = simde_mm_max_ps(src1, simde_mm_set1_ps(0.0f));
+
+    // Check if value is >= 0x80000000 (i.e., overflow risk for unsigned 32-bit)
+    simde__m128 xmm1 = simde_mm_cmpge_ps(xmm0, simde_mm_set1_ps(2147483648.0f));
+
+    // Subtract 2^31 if it's going to overflow, to fold into unsigned space
+    simde__m128 xmm2 = simde_mm_sub_ps(xmm0, simde_mm_set1_ps(2147483648.0f));
     xmm0 = simde_mm_blendv_ps(xmm0, xmm2, xmm1);
+
+    // Convert to signed integer
     simde__m128i dest = simde_mm_cvttps_epi32(xmm0);
-    xmm0 = simde_mm_cmpeq_epi32(dest, simde_mm_set1_epi32(INT_MIN));
-    xmm1 = simde_mm_and_si128(xmm1, simde_mm_set1_epi32(INT_MIN));
-    dest = simde_mm_add_epi32(dest, xmm1);
-    return simde_mm_or_si128(dest, xmm0);
+
+    // Saturate INT_MIN results
+    simde__m128i mask_min = simde_mm_cmpeq_epi32(dest, simde_mm_set1_epi32(INT_MIN));
+    simde__m128i correction = simde_mm_and_si128(simde_mm_castps_si128(xmm1), simde_mm_set1_epi32(INT_MIN));
+    dest = simde_mm_add_epi32(dest, correction);
+
+    return simde_mm_or_si128(dest, mask_min);
 }
 
 #if defined(__aarch64__) || defined(_M_ARM64)
@@ -718,3 +752,62 @@ inline uint64_t __rdtsc()
 #endif
 
 #endif
+
+
+namespace simd {
+
+// Store a shuffled value into a vector register
+inline void store_shuffled(PPCVRegister& dst, simde__m128i value) {
+    *reinterpret_cast<simde__m128i*>(&dst.u8[0]) = value;
+}
+
+// Load and shuffle from memory into a vector register
+inline void load_shuffled(PPCVRegister& dst, const uint8_t* base, uint32_t offset) {
+    store_shuffled(dst, shuffle_masked_load(base, offset));
+}
+
+// Extract scalar from SIMD register
+inline uint32_t extract_u32(vec128i v, int lane) {
+    alignas(16) uint32_t temp[4];
+    simde_mm_store_si128(reinterpret_cast<simde__m128i*>(temp), v);
+    return temp[lane & 3];
+}
+
+// Extract scalar directly from register
+inline uint32_t extract_u32(const PPCVRegister& reg, int lane) {
+    return reg.u32[lane & 3];
+}
+
+// --- SIMD conversion helpers ---
+
+// Convert const PPCVRegister to vec128i
+inline vec128i to_vec128i(const PPCVRegister& v) {
+    return *reinterpret_cast<const vec128i*>(v.u8);
+}
+
+// Convert non-const PPCVRegister to vec128i (reference)
+inline vec128i& to_vec128i(PPCVRegister& v) {
+    return *reinterpret_cast<vec128i*>(v.u8);
+}
+
+// Convert const PPCVRegister to vec128f
+inline vec128f to_vec128f(const PPCVRegister& v) {
+    return *reinterpret_cast<const vec128f*>(v.f32);
+}
+
+// Convert non-const PPCVRegister to vec128f (reference)
+inline vec128f& to_vec128f(PPCVRegister& v) {
+    return *reinterpret_cast<vec128f*>(v.f32);
+}
+
+inline void store_shuffled(PPCVRegister& dst, simd::vec128f value) {
+    *reinterpret_cast<simd::vec128f*>(&dst.f32[0]) = value;
+}
+
+inline void store_shifted_i8(PPCVRegister& dst, const PPCVRegister& src, const PPCVRegister& shift) {
+    // Example: simple copy for now, no actual shift logic
+    memcpy(dst.u8, src.u8, 16);
+}
+
+} // namespace simd
+
