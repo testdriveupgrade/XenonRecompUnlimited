@@ -5,7 +5,7 @@ XenonRecompUnlimited - it's special fork of XenonRecomp for TDU engine, like exp
  
 Some  new commands of PowerPC CPU checked, but other experimental
 
-**!!! Build this instrument in linux, due to some strange problems in windows 10-11 compile!!!**
+**!!! Build this instrument in linux, due to some strange problems in windows 10-11 compile(or try to use not MSVC 2022)!!!**
 
 ### Simplified step-by-step Instructions
 **I think default recompiler instruction too hard, because there a lot of text, that can be explained easier and a lot of not primary information, but less "obviously instructions(for some people it can be not obviously)" **
