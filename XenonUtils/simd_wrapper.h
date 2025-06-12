@@ -1,4 +1,5 @@
-#pragma once
+
+/*#pragma once
 
 // Must be defined BEFORE including any intrinsics to block conflicts
 #ifndef SDL_DISABLE_IMMINTRIN_H
@@ -605,3 +606,4 @@ inline double rsqrt_f64(double val) {
 
 } // namespace simd
 
+*/
