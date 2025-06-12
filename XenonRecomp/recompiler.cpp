@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "recompiler.h"
-#include "simd_wrapper.h"
+//#include "simd_wrapper.h"
 #include <xex_patcher.h>
+#include <sstream>
 
 static uint64_t ComputeMask(uint32_t mstart, uint32_t mstop)
 {
@@ -2572,7 +2573,7 @@ case PPC_INST_VLOGEFP128:
         println("\tsimd::store_f32({}.f32, simd::round_f32(simd::load_f32({}.f32), simd::round_to_zero));",
             v(insn.operands[0]), v(insn.operands[1]));
         break;
-
+/*
 case PPC_INST_VRLIMI128:
 {
     const int blend_mask = insn.operands[2];
@@ -2611,7 +2612,7 @@ case PPC_INST_VRLIMI128:
         println("{} = {};", v(insn.operands[0]), vTemp());
         break;
 
-
+*/
 case PPC_INST_VRSQRTEFP:
 case PPC_INST_VRSQRTEFP128:
     printSetFlushMode(true);
